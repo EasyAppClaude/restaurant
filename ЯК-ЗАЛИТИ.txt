@@ -1,0 +1,26 @@
+КАСА «Vyshnia House» — як залити на новий GitHub-акаунт
+=======================================================
+
+Спосіб 1 (без терміналу, найпростіший):
+1. Зайдіть на github.com під НОВИМ акаунтом.
+2. New repository → назва, напр. "kasa" → Create repository.
+3. На сторінці репозиторію: "Add file" → "Upload files".
+4. Перетягніть СЮДИ всі файли з цієї папки (index.html, app.js, styles.css,
+   icons.js, sw.js, manifest.json, icon-192.png, icon-512.png, README.md).
+   ВАЖЛИВО: завантажуйте самі файли, а не папку — щоб index.html був у корені.
+5. Commit changes.
+6. Settings → Pages → Source: "Deploy from a branch" → Branch: main, папка / (root) → Save.
+7. За 1–2 хв каса буде за адресою:
+   https://НОВИЙ-АКАУНТ.github.io/kasa/
+
+Спосіб 2 (термінал):
+   cd шлях/до/цієї/папки
+   git init && git add . && git commit -m "Vyshnia POS"
+   git branch -M main
+   git remote add origin https://github.com/НОВИЙ-АКАУНТ/kasa.git
+   git push -u origin main
+   (потім увімкнути Pages як у кроці 6 вище)
+
+Дані (меню, історія) у застосунку зберігаються локально в браузері.
+Щоб перенести й їх — у старій касі: Налаштування → "Завантажити копію",
+а в новій: Налаштування → "Відновити з файлу".
