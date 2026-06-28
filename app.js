@@ -20,6 +20,7 @@ const DEFAULT_STATE = {
   seeded: false,
   menuVersion: 0,
   billCounter: 1000,
+  uiZone: "Усі",
 };
 
 const MENU_VERSION = 3;
@@ -320,9 +321,9 @@ function serviceAmount(subtotal) {
 }
 
 // ====== MODAL ======
-function openModal(html) {
+function openModal(html, extra = "") {
   const bg = $("#modalBg");
-  bg.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${html}</div>`;
+  bg.innerHTML = `<div class="modal ${extra}" role="dialog" aria-modal="true">${html}</div>`;
   bg.classList.add("show");
   document.body.style.overflow = "hidden";
 }
@@ -362,32 +363,56 @@ function syncNav(r) {
 window.addEventListener("hashchange", render);
 
 // ====== VIEW: TABLES (home) ======
-function viewTables() {
-  const tables = state.tables;
-  const cards = tables.map(t => {
-    const subtotal = tableSubtotal(t);
-    const qty = tableQty(t);
-    return `
+function tableZone(t) { return (t.zone || "").trim() || "Без залу"; }
+function setZone(enc) { state.uiZone = decodeURIComponent(enc); save(); render(); }
+function tableCardHtml(t) {
+  const subtotal = tableSubtotal(t);
+  const qty = tableQty(t);
+  const seats = Math.max(0, parseInt(t.seats) || 0);
+  const dots = seats ? `<div class="seat-dots">${"<i></i>".repeat(Math.min(seats, 12))}</div>` : "";
+  const bottomLeft = qty
+    ? `${qty} ${plural(qty, "позиція", "позиції", "позицій")}`
+    : (seats ? `${seats} ${plural(seats, "місце", "місця", "місць")}` : "Вільний");
+  return `
       <button class="card table-card ${qty ? "busy" : "free"}" onclick="go('table/${t.id}')">
         <div class="table-card-top">
-          <span class="table-name">${icon("table", 18)}<span class="tname">${esc(t.name)}</span></span>
+          <span class="table-name">${icon("table", 16)}<span class="tname">${esc(t.name)}</span></span>
           <span class="badge ${qty ? "badge-busy" : "badge-free"}">${qty ? "Зайнятий" : "Вільний"}</span>
         </div>
+        ${dots}
         <div class="table-card-bottom">
-          <span class="muted">${qty ? `${qty} ${plural(qty, "позиція", "позиції", "позицій")}` : "Немає замовлення"}</span>
+          <span class="muted">${bottomLeft}</span>
           <span class="table-sum">${subtotal ? money(subtotal) : ""}</span>
         </div>
       </button>`;
-  }).join("");
-
-  return `
+}
+function viewTables() {
+  const tables = state.tables;
+  const header = `
     <header class="topbar">
       <div class="topbar-title">${icon("store", 22)} ${esc(state.settings.restaurant)}</div>
       <button class="icon-btn" onclick="addTable()" aria-label="Додати столик">${icon("plus", 22)}</button>
-    </header>
-    <div class="page">
-      ${tables.length ? `<div class="grid">${cards}</div>` : emptyState("table", "Поки немає столиків", "Додайте перший столик, щоб почати приймати замовлення.", "Додати столик", "addTable()")}
-    </div>`;
+    </header>`;
+  if (!tables.length) {
+    return header + `<div class="page">${emptyState("table", "Поки немає столиків", "Додайте перший столик, щоб почати приймати замовлення.", "Додати столик", "addTable()")}</div>`;
+  }
+  // зали в порядку появи
+  const zones = [];
+  tables.forEach(t => { const z = tableZone(t); if (!zones.includes(z)) zones.push(z); });
+  let cur = state.uiZone || "Усі";
+  if (cur !== "Усі" && !zones.includes(cur)) cur = "Усі";
+  const tab = (label, z) => `<button class="zone-tab ${cur === z ? "active" : ""}" onclick="setZone('${encodeURIComponent(z)}')">${esc(label)}</button>`;
+  const tabs = `<div class="zone-tabs">${tab("Усі", "Усі")}${zones.map(z => tab(z, z)).join("")}</div>`;
+  let body;
+  if (cur === "Усі") {
+    body = zones.map(z => {
+      const ts = tables.filter(t => tableZone(t) === z);
+      return `<div class="zone-head">${esc(z)}</div><div class="grid">${ts.map(tableCardHtml).join("")}</div>`;
+    }).join("");
+  } else {
+    body = `<div class="grid">${tables.filter(t => tableZone(t) === cur).map(tableCardHtml).join("")}</div>`;
+  }
+  return header + `<div class="page">${tabs}${body}</div>`;
 }
 
 function emptyState(ico, title, text, btnLabel, btnAction) {
@@ -400,14 +425,19 @@ function emptyState(ico, title, text, btnLabel, btnAction) {
     </div>`;
 }
 
+function zoneDatalist() {
+  const zones = [...new Set(state.tables.map(tableZone))].filter(z => z !== "Без залу");
+  return zones.map(z => `<option value="${esc(z)}"></option>`).join("");
+}
 function addTable() {
   const n = state.tables.length + 1;
+  const zones = [...new Set(state.tables.map(tableZone))].filter(z => z !== "Без залу");
+  const defZone = (state.uiZone && state.uiZone !== "Усі") ? state.uiZone : (zones[0] || "Зал 1");
   openModal(`
     <div class="modal-head"><h2>Новий столик</h2><button class="icon-btn" onclick="closeModal()">${icon("x", 20)}</button></div>
-    <label class="field">
-      <span>Назва</span>
-      <input id="tblName" type="text" value="Столик ${n}" autocomplete="off">
-    </label>
+    <label class="field"><span>Назва</span><input id="tblName" type="text" value="Столик ${n}" autocomplete="off"></label>
+    <label class="field"><span>Зал</span><input id="tblZone" type="text" list="zoneList" value="${esc(defZone)}" placeholder="напр. 1-й зал"><datalist id="zoneList">${zoneDatalist()}</datalist></label>
+    <label class="field"><span>Місць за столом</span><input id="tblSeats" type="number" inputmode="numeric" min="0" max="20" value="4"></label>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Скасувати</button>
       <button class="btn btn-primary" onclick="saveNewTable()">Створити</button>
@@ -416,8 +446,11 @@ function addTable() {
 }
 function saveNewTable() {
   const name = ($("#tblName").value || "").trim() || `Столик ${state.tables.length + 1}`;
-  const t = { id: uid(), name, items: [], openedAt: new Date().toISOString() };
+  const zone = ($("#tblZone").value || "").trim() || "Зал 1";
+  const seats = Math.max(0, Math.min(20, parseInt($("#tblSeats").value) || 0));
+  const t = { id: uid(), name, zone, seats, items: [], openedAt: new Date().toISOString() };
   state.tables.push(t);
+  state.uiZone = zone;
   save();
   closeModal();
   go(`table/${t.id}`);
@@ -468,8 +501,10 @@ function renameTable(id) {
   const t = state.tables.find(x => x.id === id);
   if (!t) return;
   openModal(`
-    <div class="modal-head"><h2>Перейменувати столик</h2><button class="icon-btn" onclick="closeModal()">${icon("x", 20)}</button></div>
+    <div class="modal-head"><h2>Столик</h2><button class="icon-btn" onclick="closeModal()">${icon("x", 20)}</button></div>
     <label class="field"><span>Назва</span><input id="tblName" type="text" value="${esc(t.name)}"></label>
+    <label class="field"><span>Зал</span><input id="tblZone" type="text" list="zoneList" value="${esc(tableZone(t))}" placeholder="напр. 1-й зал"><datalist id="zoneList">${zoneDatalist()}</datalist></label>
+    <label class="field"><span>Місць за столом</span><input id="tblSeats" type="number" inputmode="numeric" min="0" max="20" value="${Math.max(0, parseInt(t.seats) || 0)}"></label>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Скасувати</button>
       <button class="btn btn-primary" onclick="saveRenameTable('${id}')">Зберегти</button>
@@ -481,6 +516,9 @@ function saveRenameTable(id) {
   if (!t) return closeModal();
   const name = ($("#tblName").value || "").trim();
   if (name) t.name = name;
+  const zone = ($("#tblZone").value || "").trim();
+  if (zone) t.zone = zone;
+  t.seats = Math.max(0, Math.min(20, parseInt($("#tblSeats").value) || 0));
   save();
   closeModal();
   render();
@@ -549,34 +587,28 @@ function openDishPicker(tableId) {
       </div>`);
     return;
   }
+  pickerCat = null; // старт: буде обрана перша категорія
+  openDishPicker._table = tableId;
   openModal(`
     <div class="modal-head"><h2>Додати страву</h2><button class="icon-btn" onclick="closeModal(); render()">${icon("x", 20)}</button></div>
     <label class="field search-field">${icon("search", 18, "dim")}<input id="dishSearch" type="text" placeholder="Пошук по меню…" oninput="filterDishes(this.value)" autocomplete="off"></label>
     <div class="picker-list" id="pickerList">${renderPickerList(tableId, "")}</div>
-    <div class="modal-actions"><button class="btn btn-primary btn-block" onclick="closeModal(); render()">Готово</button></div>`);
-  openDishPicker._table = tableId;
+    <div class="modal-actions"><button class="btn btn-primary btn-block" onclick="closeModal(); render()">Готово</button></div>`, "modal-wide");
   setTimeout(() => $("#dishSearch")?.focus(), 50);
 }
 function filterDishes(q) {
   $("#pickerList").innerHTML = renderPickerList(openDishPicker._table, q);
 }
-function renderPickerList(tableId, q) {
-  const t = state.tables.find(x => x.id === tableId);
-  const query = (q || "").trim().toLowerCase();
-  const cats = {};
-  state.menu
-    .filter(m => !query || m.name.toLowerCase().includes(query))
-    .forEach(m => { (cats[m.category || "Інше"] ||= []).push(m); });
-
-  const keys = Object.keys(cats);
-  if (!keys.length) return `<div class="picker-empty muted">Нічого не знайдено</div>`;
-
-  return keys.map(cat => `
-    <div class="picker-cat">${esc(cat)}</div>
-    ${cats[cat].map(m => {
-      const inOrder = t?.items.find(i => i.menuId === m.id);
-      const qty = inOrder ? inOrder.qty : 0;
-      return `
+let pickerCat = null;
+function selectCat(enc) {
+  pickerCat = decodeURIComponent(enc);
+  const list = $("#pickerList");
+  if (list) list.innerHTML = renderPickerList(openDishPicker._table, $("#dishSearch")?.value || "");
+}
+function dishRowHtml(t, tableId, m) {
+  const inOrder = t?.items.find(i => i.menuId === m.id);
+  const qty = inOrder ? inOrder.qty : 0;
+  return `
         <div class="picker-row" onclick="addDish('${tableId}','${m.id}')">
           <div class="picker-info">
             <div class="picker-name">${esc(m.name)}</div>
@@ -585,7 +617,37 @@ function renderPickerList(tableId, q) {
           ${qty ? `<span class="qty-pill">${qty}</span>` : ""}
           <span class="picker-add">${icon("plus", 18)}</span>
         </div>`;
-    }).join("")}`).join("");
+}
+function renderPickerList(tableId, q) {
+  const t = state.tables.find(x => x.id === tableId);
+  const query = (q || "").trim().toLowerCase();
+  const allCats = [...new Set(state.menu.map(m => m.category || "Інше"))];
+  if (!allCats.length) return `<div class="picker-empty muted">Меню порожнє</div>`;
+
+  // права панель: страви (за пошуком або за обраною категорією)
+  let activeCat = null, dishesHtml;
+  if (query) {
+    const matches = state.menu.filter(m => m.name.toLowerCase().includes(query));
+    dishesHtml = matches.length
+      ? matches.map(m => dishRowHtml(t, tableId, m)).join("")
+      : `<div class="picker-empty muted">Нічого не знайдено</div>`;
+  } else {
+    activeCat = allCats.includes(pickerCat) ? pickerCat : allCats[0];
+    dishesHtml = state.menu.filter(m => (m.category || "Інше") === activeCat)
+      .map(m => dishRowHtml(t, tableId, m)).join("");
+  }
+
+  // ліва панель: категорії у 2 стовпці
+  const catsHtml = allCats.map(c => {
+    const inCat = state.menu.filter(m => (m.category || "Інше") === c)
+      .reduce((n, m) => n + (t?.items.find(i => i.menuId === m.id)?.qty || 0), 0);
+    return `<button class="picker-cat-tile ${c === activeCat ? "active" : ""}" onclick="selectCat('${encodeURIComponent(c)}')">
+        <span class="pct-name">${esc(c)}</span>
+        ${inCat ? `<span class="qty-pill">${inCat}</span>` : ""}
+      </button>`;
+  }).join("");
+
+  return `<div class="picker2"><div class="picker-cats">${catsHtml}</div><div class="picker-dishes">${dishesHtml}</div></div>`;
 }
 function addDish(tableId, menuId) {
   const t = state.tables.find(x => x.id === tableId);
@@ -1204,8 +1266,8 @@ function dayReportSheet(dateStr) {
 
 // expose for inline handlers
 Object.assign(window, {
-  go, addTable, saveNewTable, renameTable, saveRenameTable, changeQty,
-  confirmCloseTable, closeTable, openDishPicker, filterDishes, addDish,
+  go, setZone, addTable, saveNewTable, renameTable, saveRenameTable, changeQty,
+  confirmCloseTable, closeTable, openDishPicker, filterDishes, selectCat, addDish,
   showReceipt, printReceipt, editDish, saveDish, deleteDish, doDeleteDish,
   showHistReceipt, confirmClearHistory, clearHistory, saveSettings, closeModal,
   exportBackup, importBackup, applyBackup, showDayReport,
