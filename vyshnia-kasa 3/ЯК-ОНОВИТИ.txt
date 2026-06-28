@@ -1,0 +1,3 @@
+Каса Vyshnia House — оновлення (вибір страв: категорії 2 стовпці ліворуч, страви праворуч).
+github.com/EasyAppClaude/restaurant -> Add file -> Upload files -> перетягнути ВСІ файли (замінити) -> Commit.
+На iPad оновити сторінку. Принтер не чіпати.
